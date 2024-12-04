@@ -5,20 +5,25 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const flags = try flag.parseFlags(.{
-        .{ "help", bool, false },
-        .{ "threads", u32, 1 },
-        .{ "filename", ?[]u8 },
+    const parsed = try flag.parseFlags(.{
+        .{ "help", bool, false, "Show help message and exit" },
+        .{ "threads", u32, 1, "Number of threads" },
+        .{ "filename", ?[]u8, null, "Input filename" },
         // ensure the third element has the right type to be a default value
-        .{ "output", []u8, @as([]u8, @constCast("output.txt")) },
+        .{ "output", []u8, @as([]u8, @constCast("output.txt")), "Output filename" },
     }, allocator);
 
-    inline for (@typeInfo(@TypeOf(flags)).Struct.fields) |field| {
+    defer parsed.deinit();
+
+    if (parsed.flags.help)
+        try parsed.writeHelp(std.io.getStdOut().writer());
+
+    inline for (@typeInfo(@TypeOf(parsed.flags)).Struct.fields) |field| {
         std.debug.print("Option '{s}' has type {} and value: ", .{ field.name, field.type });
         std.debug.print(switch (field.type) {
             []u8, []const u8, ?[]u8, ?[]const u8 => "{?s}\n",
             else => "{any}\n",
-        }, .{@field(flags, field.name)});
+        }, .{@field(parsed.flags, field.name)});
     }
 }
 

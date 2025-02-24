@@ -15,6 +15,12 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    _ = b.addModule("zig-flags", .{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("src/flag.zig"),
+    });
+
     const exe = b.addExecutable(.{
         .name = "flags",
         .root_source_file = b.path("src/main.zig"),

@@ -13,14 +13,14 @@ fn Flag(comptime flags: anytype) type {
         fields[i] = .{
             .name = @ptrCast(fieldName),
             .type = fieldType,
-            .default_value = null,
+            .default_value_ptr = null,
             .is_comptime = false,
             .alignment = 0,
         };
     }
 
     return @Type(.{
-        .Struct = .{
+        .@"struct" = .{
             .layout = .auto,
             .fields = &fields,
             .decls = &[_]std.builtin.Type.Declaration{},
@@ -129,7 +129,7 @@ pub fn parseFlags(comptime options: anytype, allocator: std.mem.Allocator) !Pars
     var arena = std.heap.ArenaAllocator.init(allocator);
 
     inline for (options) |f| {
-        @field(flags, f[0]) = if (try findFlag(f, &arena, args)) |value| value else if (f.len > 2 and @typeInfo(@TypeOf(f[2])) != .Null) f[2] else if (@typeInfo(f[1]) == .Optional) null else std.debug.panic("Missing option {s}", .{f[0]});
+        @field(flags, f[0]) = if (try findFlag(f, &arena, args)) |value| value else if (f.len > 2 and @typeInfo(@TypeOf(f[2])) != .null) f[2] else if (@typeInfo(f[1]) == .optional) null else std.debug.panic("Missing option {s}", .{f[0]});
     }
     return Parsed(options).init(flags, arena);
 }

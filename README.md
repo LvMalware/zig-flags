@@ -2,7 +2,7 @@
 
 A command line flags parser for zig.
 
-Tested only with Zig `0.13.0`!
+Works only with Zig `0.14.0`!
 
 Example:
 

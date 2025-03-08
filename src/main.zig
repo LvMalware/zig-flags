@@ -18,7 +18,7 @@ pub fn main() !void {
     if (parsed.flags.help)
         try parsed.writeHelp(std.io.getStdOut().writer());
 
-    inline for (@typeInfo(@TypeOf(parsed.flags)).Struct.fields) |field| {
+    inline for (@typeInfo(@TypeOf(parsed.flags)).@"struct".fields) |field| {
         std.debug.print("Option '{s}' has type {} and value: ", .{ field.name, field.type });
         std.debug.print(switch (field.type) {
             []u8, []const u8, ?[]u8, ?[]const u8 => "{?s}\n",

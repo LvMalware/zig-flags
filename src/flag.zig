@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 /// helper function that returns a structure definition, with the fields
 /// given by the comptime `flags` anonymous structure members.
@@ -65,23 +66,33 @@ fn findFlag(comptime flag: anytype, arena: *std.heap.ArenaAllocator, args: [][:0
     return null;
 }
 
+const path_separator = if (builtin.os.tag == .windows) '\\' else '/';
+
 fn Parsed(comptime options: anytype) type {
     const T = Flag(options);
     return struct {
         const Self = @This();
 
+        prog: []const u8,
         flags: T,
         allocator: std.heap.ArenaAllocator,
 
-        pub fn init(flags: T, allocator: std.heap.ArenaAllocator) Self {
+        pub fn init(flags: T, arena: std.heap.ArenaAllocator) !Self {
+            var args = std.process.args();
+            const prog = if (args.next()) |arg0|
+                (if (std.mem.lastIndexOfScalar(u8, arg0, path_separator)) |i| arg0[i + 1 ..] else arg0)
+            else
+                unreachable;
             return .{
+                .prog = try arena.child_allocator.dupe(u8, prog),
                 .flags = flags,
-                .allocator = allocator,
+                .allocator = arena,
             };
         }
 
         pub fn deinit(self: Self) void {
             self.allocator.deinit();
+            self.allocator.child_allocator.free(self.prog);
         }
 
         pub fn writeHelp(self: Self, writer: anytype) !void {
@@ -113,12 +124,12 @@ fn Parsed(comptime options: anytype) type {
 
 /// **Parse command line arguments**, returning a struct where each field is a command line option.
 /// `flags` is a comptime anonymous structure, where each element defines an option to be parsed.
-/// Each element has the fields `name`, `type` and (optionally) `default`, in this order.
+/// Each element has the fields `name`, `type`, `default` and `description`, in this order.
 /// Example:
 /// const flags = try parseFlags(.{
-///     .{ "help", bool, false },
-///     .{ "input", ?[]u8 },
-///     .{ "threads", u32, 1 },
+///     .{ "help", bool, false, "show help message" },
+///     .{ "input", ?[]u8, null, "input filename" },
+///     .{ "threads", u32, 1, "number of threads" },
 /// }, allocator);
 pub fn parseFlags(comptime options: anytype, allocator: std.mem.Allocator) !Parsed(options) {
     const args = try std.process.argsAlloc(allocator);
@@ -131,5 +142,5 @@ pub fn parseFlags(comptime options: anytype, allocator: std.mem.Allocator) !Pars
     inline for (options) |f| {
         @field(flags, f[0]) = if (try findFlag(f, &arena, args)) |value| value else if (f.len > 2 and @typeInfo(@TypeOf(f[2])) != .null) f[2] else if (@typeInfo(f[1]) == .optional) null else std.debug.panic("Missing option {s}", .{f[0]});
     }
-    return Parsed(options).init(flags, arena);
+    return try Parsed(options).init(flags, arena);
 }

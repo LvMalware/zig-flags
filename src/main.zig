@@ -15,8 +15,12 @@ pub fn main() !void {
 
     defer parsed.deinit();
 
-    if (parsed.flags.help)
-        try parsed.writeHelp(std.io.getStdOut().writer());
+    if (parsed.flags.help) {
+        const stdout = std.io.getStdOut().writer();
+        try stdout.print("Usage: {s} [Options]\n\nOptions:\n\n", .{parsed.prog});
+        try parsed.writeHelp(stdout);
+        try stdout.print("\n", .{});
+    }
 
     inline for (@typeInfo(@TypeOf(parsed.flags)).@"struct".fields) |field| {
         std.debug.print("Option '{s}' has type {} and value: ", .{ field.name, field.type });

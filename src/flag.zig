@@ -78,7 +78,8 @@ fn Parsed(comptime options: anytype) type {
         allocator: std.heap.ArenaAllocator,
 
         pub fn init(flags: T, arena: std.heap.ArenaAllocator) !Self {
-            var args = std.process.args();
+            var args = try std.process.ArgIterator.initWithAllocator(arena.child_allocator);
+            defer args.deinit();
             const prog = if (args.next()) |arg0|
                 (if (std.mem.lastIndexOfScalar(u8, arg0, path_separator)) |i| arg0[i + 1 ..] else arg0)
             else

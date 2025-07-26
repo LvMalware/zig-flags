@@ -15,14 +15,16 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const flags = try flag.parse(.{
+    const parsed = try flag.parse(.{
         .{ "help", bool, false, "Show help" },
         .{ "filename", ?[]u8, null, "Input filename" },
     }, allocator);
 
-    std.debug.print("Filename: {?s}\n", .{ flags.filename });
+    defer parsed.deinit();
 
-    if (flags.help) {
+    std.debug.print("Filename: {?s}\n", .{ parsed.flags.filename });
+
+    if (parsed.flags.help) {
         std.debug.print("help message\n", .{});
     }
     // ...

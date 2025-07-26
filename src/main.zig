@@ -5,7 +5,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const parsed = try flag.parseFlags(.{
+    const parsed = try flag.parse(.{
         .{ "help", bool, false, "Show help message and exit" },
         .{ "threads", u32, 1, "Number of threads" },
         .{ "filename", ?[]u8, null, "Input filename" },
@@ -28,6 +28,10 @@ pub fn main() !void {
             []u8, []const u8, ?[]u8, ?[]const u8 => "{?s}\n",
             else => "{any}\n",
         }, .{@field(parsed.flags, field.name)});
+    }
+
+    for (parsed.args, 0..) |arg, i| {
+        std.debug.print("Argument {d}: {s}\n", .{ i, arg });
     }
 }
 

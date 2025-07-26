@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 
 /// helper function that returns a structure definition, with the fields
 /// given by the comptime `flags` anonymous structure members.
-/// This is only guaranteed to work for zig version `0.13.0`!
+/// This is only guaranteed to work for zig version `0.14.0`!
 fn Flag(comptime flags: anytype) type {
     var fields: [flags.len]std.builtin.Type.StructField = undefined;
 
@@ -38,9 +38,10 @@ fn findFlag(comptime flag: anytype, arena: *std.heap.ArenaAllocator, args: [][:0
     const name = flag[0];
 
     while (i < args.len) : (i += 1) {
-        if (!std.mem.startsWith(u8, args[i], "-"))
+        if (!std.mem.startsWith(u8, args[i], "-")) {
             // TODO: handle arguments which are not flags
             continue;
+        }
         var option = std.mem.splitScalar(u8, std.mem.trimLeft(u8, args[i], "-"), '=');
         const param = option.first();
         if (std.mem.eql(u8, param, name)) {
@@ -51,7 +52,7 @@ fn findFlag(comptime flag: anytype, arena: *std.heap.ArenaAllocator, args: [][:0
                     []u8, []const u8, ?[]u8, ?[]const u8 => try arena.allocator().dupe(u8, val),
                     else => error.InvalidFlagType,
                 };
-            } else if (args.len > (i + 1) and !std.mem.startsWith(u8, args[i + 1], "--")) {
+            } else if (args.len > (i + 1) and !std.mem.startsWith(u8, args[i + 1], "-")) {
                 return switch (flag[1]) {
                     bool, ?bool => std.mem.eql(u8, args[i + 1], "true"),
                     i16, u16, i32, i64, u32, u64 => std.fmt.parseInt(flag[1], args[i + 1], 10) catch std.debug.panic("Invalid integer for option '{s}'", .{name}),
@@ -74,10 +75,11 @@ fn Parsed(comptime options: anytype) type {
         const Self = @This();
 
         prog: []const u8,
+        args: [][]u8,
         flags: T,
         allocator: std.heap.ArenaAllocator,
 
-        pub fn init(flags: T, arena: std.heap.ArenaAllocator) !Self {
+        pub fn init(flags: T, arena: std.heap.ArenaAllocator, arglist: [][]u8) !Self {
             var args = try std.process.ArgIterator.initWithAllocator(arena.child_allocator);
             defer args.deinit();
             const prog = if (args.next()) |arg0|
@@ -86,6 +88,7 @@ fn Parsed(comptime options: anytype) type {
                 unreachable;
             return .{
                 .prog = try arena.child_allocator.dupe(u8, prog),
+                .args = arglist,
                 .flags = flags,
                 .allocator = arena,
             };
@@ -94,6 +97,7 @@ fn Parsed(comptime options: anytype) type {
         pub fn deinit(self: Self) void {
             self.allocator.deinit();
             self.allocator.child_allocator.free(self.prog);
+            self.allocator.child_allocator.free(self.args);
         }
 
         pub fn writeHelp(self: Self, writer: anytype) !void {
@@ -123,7 +127,7 @@ fn Parsed(comptime options: anytype) type {
     };
 }
 
-/// **Parse command line arguments**, returning a struct where each field is a command line option.
+/// **Parse command line arguments**, returning a Parsed struct.
 /// `flags` is a comptime anonymous structure, where each element defines an option to be parsed.
 /// Each element has the fields `name`, `type`, `default` and `description`, in this order.
 /// Example:
@@ -132,16 +136,67 @@ fn Parsed(comptime options: anytype) type {
 ///     .{ "input", ?[]u8, null, "input filename" },
 ///     .{ "threads", u32, 1, "number of threads" },
 /// }, allocator);
-pub fn parseFlags(comptime options: anytype, allocator: std.mem.Allocator) !Parsed(options) {
+pub fn parse(comptime options: anytype, allocator: std.mem.Allocator) !Parsed(options) {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
     var flags: Flag(options) = undefined;
-
     var arena = std.heap.ArenaAllocator.init(allocator);
+    var arguments = std.ArrayList([]u8).init(allocator);
+    defer arguments.deinit();
 
     inline for (options) |f| {
-        @field(flags, f[0]) = if (try findFlag(f, &arena, args)) |value| value else if (f.len > 2 and @typeInfo(@TypeOf(f[2])) != .null) f[2] else if (@typeInfo(f[1]) == .optional) null else std.debug.panic("Missing option {s}", .{f[0]});
+        if (f.len > 2 and @typeInfo(@TypeOf(f[2])) != .null) {
+            @field(flags, f[0]) = f[2];
+        } else if (@typeInfo(f[1]) == .optional) {
+            @field(flags, f[0]) = null;
+        }
     }
-    return try Parsed(options).init(flags, arena);
+
+    var i: usize = 1;
+
+    while (i < args.len) {
+        if (!std.mem.startsWith(u8, args[i], "-")) {
+            try arguments.append(try arena.allocator().dupe(u8, args[i]));
+            i += 1;
+            continue;
+        }
+
+        var valid: bool = false;
+
+        var option = std.mem.splitScalar(u8, std.mem.trimLeft(u8, args[i], "-"), '=');
+        const param = option.first();
+
+        inline for (options) |flag| {
+            const name = flag[0];
+            if (std.mem.eql(u8, param, name)) {
+                valid = true;
+                if (option.peek()) |val| {
+                    @field(flags, name) = switch (flag[1]) {
+                        bool, ?bool => std.mem.eql(u8, val, "true"),
+                        i16, u16, i32, i64, u32, u64 => std.fmt.parseInt(flag[1], val, 10) catch std.debug.panic("Invalid integer for option '{s}'", .{name}),
+                        []u8, []const u8, ?[]u8, ?[]const u8 => try arena.allocator().dupe(u8, val),
+                        else => return error.InvalidFlagType,
+                    };
+                } else if (flag[1] == bool) {
+                    @field(flags, name) = if (flag.len > 2) !flag[2] else true;
+                } else if (args.len > (i + 1) and !std.mem.startsWith(u8, args[i + 1], "-")) {
+                    @field(flags, name) = switch (flag[1]) {
+                        i16, u16, i32, i64, u32, u64 => std.fmt.parseInt(flag[1], args[i + 1], 10) catch std.debug.panic("Invalid integer for option '{s}'", .{name}),
+                        []u8, []const u8, ?[]u8, ?[]const u8 => try arena.allocator().dupe(u8, args[i + 1]),
+                        else => return error.InvalidFlagType,
+                    };
+                    i += 1;
+                }
+            }
+        }
+
+        if (!valid) {
+            try arguments.append(try arena.allocator().dupe(u8, args[i]));
+        }
+
+        i += 1;
+    }
+
+    return try Parsed(options).init(flags, arena, try arguments.toOwnedSlice());
 }
